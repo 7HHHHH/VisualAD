@@ -2,7 +2,7 @@
 from .logger import get_logger
 from .loss import FocalLoss, BinaryDiceLoss
 from .transforms import get_transform
-from .metrics_h import compute_metrics
+from .metrics import compute_metrics
 
 # New analysis and visualization utilities
 from .normalization import normalize_anomaly_maps_by_class, normalize_classification_scores_by_class

@@ -157,18 +157,13 @@ class LayerAdaptiveCrossAttention(nn.Module):
         dropout: Dropout rate
     """
     def __init__(self, layers, embed_dim, num_anchors=8, dropout=0.1, max_patches=1536,
-                 res_scale_init=0.1, apply_to_layer24=False):
+                 res_scale_init=0.1):
         super().__init__()
         self.layers = layers
-        self.apply_to_layer24 = apply_to_layer24
 
-        # Create independent attention for each layer (anomaly and normal share the same module)
+        # Create independent attention for each layer
         self.layer_attentions = nn.ModuleDict()
-
-        # Decide whether to create attention for layer 24 based on apply_to_layer24 parameter
-        layers_to_process = layers if apply_to_layer24 else layers[:-1]
-
-        for layer_id in layers_to_process:
+        for layer_id in layers:
             self.layer_attentions[f'layer_{layer_id}'] = SpatialBottleneckAttention(
                 embed_dim=embed_dim,
                 num_anchors=num_anchors,
@@ -198,26 +193,15 @@ class LayerAdaptiveCrossAttention(nn.Module):
 
         for idx, (layer_id, patch_tokens) in enumerate(zip(layer_ids, patch_tokens_list)):
             layer_key = f'layer_{layer_id}'
+            attn_module = self.layer_attentions[layer_key]
+            enhanced_anomaly = attn_module(anomaly_token, patch_tokens)
+            enhanced_normal = attn_module(normal_token, patch_tokens)
 
-            # Check if this layer needs attention processing
-            if layer_key in self.layer_attentions:
-                # Apply attention enhancement to anomaly and normal tokens separately
-                attn_module = self.layer_attentions[layer_key]
-                enhanced_anomaly = attn_module(anomaly_token, patch_tokens)
-                enhanced_normal = attn_module(normal_token, patch_tokens)
-
-                enhanced_features.append({
-                    'anomaly': enhanced_anomaly,
-                    'normal': enhanced_normal,
-                    'patches': patch_tokens  # patches remain unchanged
-                })
-            else:
-                # No attention needed, use original tokens directly (usually layer 24)
-                enhanced_features.append({
-                    'anomaly': anomaly_token,
-                    'normal': normal_token,
-                    'patches': patch_tokens
-                })
+            enhanced_features.append({
+                'anomaly': enhanced_anomaly,
+                'normal': enhanced_normal,
+                'patches': patch_tokens
+            })
 
         return enhanced_features
 
@@ -228,44 +212,20 @@ class LayerAdaptiveCrossAttention(nn.Module):
 
 
 def build_layer_adaptive_cross_attention(layers, embed_dim, num_anchors=8, dropout=0.1,
-                                          max_patches=1536, res_scale_init=0.1, apply_to_layer24=False):
+                                          max_patches=1536, res_scale_init=0.1):
     """
     Factory function: Create Layer-Adaptive Cross-Attention module
 
     Args:
         layers: Layer ID list, e.g. [6, 12, 18, 24]
-        embed_dim: Embedding dimension (768 for ViT-L, 1024 for DINOv2-L)
+        embed_dim: Embedding dimension (1024 for ViT-L)
         num_anchors: Number of anchors (default 8)
         dropout: Dropout rate (default 0.1)
-        max_patches: Maximum number of patches supported (default 1536, supports CLIP 576 and DINOv2 1369)
+        max_patches: Maximum number of patches supported (default 1536)
         res_scale_init: Initial value for residual scaling (default 0.1)
-        apply_to_layer24: Whether to apply attention to layer 24 as well (default False)
 
     Returns:
         LayerAdaptiveCrossAttention instance
-
-    Example:
-        >>> # For CLIP ViT-L/14@336px (576 patches)
-        >>> cross_attn = build_layer_adaptive_cross_attention(
-        ...     layers=[6, 12, 18, 24],
-        ...     embed_dim=768,
-        ...     num_anchors=8
-        ... )
-        >>>
-        >>> # For DINOv2-L 518px (1369 patches)
-        >>> cross_attn = build_layer_adaptive_cross_attention(
-        ...     layers=[6, 12, 18, 24],
-        ...     embed_dim=1024,
-        ...     num_anchors=8,
-        ...     max_patches=1536
-        ... )
-        >>>
-        >>> # Ablation: Apply attention to layer 24 as well
-        >>> cross_attn = build_layer_adaptive_cross_attention(
-        ...     layers=[6, 12, 18, 24],
-        ...     embed_dim=768,
-        ...     apply_to_layer24=True
-        ... )
     """
     return LayerAdaptiveCrossAttention(
         layers=layers,
@@ -273,8 +233,7 @@ def build_layer_adaptive_cross_attention(layers, embed_dim, num_anchors=8, dropo
         num_anchors=num_anchors,
         dropout=dropout,
         max_patches=max_patches,
-        res_scale_init=res_scale_init,
-        apply_to_layer24=apply_to_layer24
+        res_scale_init=res_scale_init
     )
 
 

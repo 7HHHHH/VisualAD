@@ -16,7 +16,6 @@ import numpy as np
 import os
 import random
 from utils.transforms import get_transform
-from utils.backbone_config import resolve_features_list, load_feature_layers_from_config
 from utils.scoring import reduce_anomaly_map, DEFAULT_TOPK_RATIO
 torch.use_deterministic_algorithms(True,warn_only=False)
 def setup_seed(seed):
@@ -68,26 +67,9 @@ def generate_anomaly_map_from_tokens(anomaly_features, normal_features, patch_to
         print(f"Warning: NaN detected in anomaly_score")
         anomaly_score = torch.nan_to_num(anomaly_score, nan=0.0)
     
-    # Reshape to spatial dimensions - dynamic patch calculation
+    # Reshape to spatial dimensions
     num_patches = anomaly_score.shape[1]
-    # Calculate expected patches based on image size and patch size
     patch_size_from_model = int(np.sqrt(num_patches))
-    
-    # Handle case where num_patches is not a perfect square
-    if patch_size_from_model * patch_size_from_model != num_patches:
-        # Calculate expected patches based on image size (assuming square patches)
-        expected_patch_size = int(np.sqrt(576))  # 24 for 336px input with 14px patches
-        expected_patches = expected_patch_size * expected_patch_size
-        
-        if num_patches > expected_patches:
-            # Truncate extra tokens
-            anomaly_score = anomaly_score[:, :expected_patches]
-            patch_size_from_model = expected_patch_size
-        else:
-            # Pad with zeros if fewer tokens
-            padding = expected_patches - num_patches
-            anomaly_score = F.pad(anomaly_score, (0, padding), mode='constant', value=0)
-            patch_size_from_model = expected_patch_size
     
     anomaly_map = anomaly_score.reshape(B, patch_size_from_model, patch_size_from_model)
     
@@ -125,9 +107,6 @@ def compute_classification_loss_V2(anomaly_maps_list, labels, device):
         mode="topk_mean",
         topk_ratio=DEFAULT_TOPK_RATIO
     )  # [B]
-    
-    # Use raw segmentation scores directly (same as test.py fused scores)
-    # Apply sigmoid within loss function for numerical stability
     labels_float = labels.float().to(device)
     loss = F.binary_cross_entropy_with_logits(seg_scores, labels_float)
     
@@ -148,27 +127,11 @@ def train(args):
     model.train()
     model.to(device)
 
-    if not args.features_list:
-        config_layers = load_feature_layers_from_config(args.feature_config, args.backbone, logger)
-        if config_layers:
-            args.features_list = config_layers
-
-    total_layers = getattr(model.visual.transformer, 'layers', None)
-    if total_layers is None:
-        total_layers = len(args.features_list) if args.features_list else 0
-
-    resolved_layers = resolve_features_list(args.features_list, total_layers, logger)
-    if not resolved_layers:
-        raise ValueError(f"Unable to determine valid feature layers for backbone {args.backbone}.")
-    args.features_list = resolved_layers
-
-    token_insert_layer = 0
-
     preprocess, target_transform = get_transform(args)
 
-    print_training_parameters(args, logger, token_insert_layer)
+    print_training_parameters(args, logger)
 
-    validate_training_setup(args, model, device, logger, token_insert_layer)
+    validate_training_setup(args, model, device, logger)
 
     # Spatial-Aware Cross-Attention
     from utils.spatial_cross_attention import build_layer_adaptive_cross_attention
@@ -177,8 +140,7 @@ def train(args):
         embed_dim=model.visual.embed_dim,
         num_anchors=4,
         dropout=0.1,
-        res_scale_init=0.01,
-        apply_to_layer24=True
+        res_scale_init=0.01
     ).to(device)
     cross_attn.train()
 
@@ -221,7 +183,7 @@ def train(args):
             gt[gt <= 0.5] = 0
 
             def compute_losses():
-                vision_output = model.encode_image(image, args.features_list, token_insert_layer=token_insert_layer)
+                vision_output = model.encode_image(image, args.features_list)
                 anomaly_features = vision_output['anomaly_features']
                 normal_features = vision_output['normal_features']
                 patch_tokens = vision_output['patch_tokens']
@@ -359,13 +321,11 @@ def train(args):
         if (epoch + 1) % args.save_freq == 0:
             save_checkpoint(model, layer_transforms, args, epoch + 1,
                           os.path.join(args.save_path, f'epoch_{epoch + 1}.pth'),
-                          token_insert_layer=token_insert_layer,
                           cross_attn=cross_attn)
 
     # Save final model
     final_ckp_path = os.path.join(args.save_path, 'final_model.pth')
     save_checkpoint(model, layer_transforms, args, args.epoch, final_ckp_path,
-                   token_insert_layer=token_insert_layer,
                    cross_attn=cross_attn)
 
     logger.info(f'Training completed! Model saved to {final_ckp_path}')

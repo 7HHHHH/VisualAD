@@ -6,23 +6,22 @@ import torch.nn as nn
 from .feature_transform import create_feature_transform
 
 
-def print_training_parameters(args, logger, token_insert_layer=0):
+def print_training_parameters(args, logger):
     """Print all training parameters before starting training"""
     logger.info(f"Training: {args.train_dataset} | Backbone: {args.backbone} | "
                 f"Epochs: {args.epoch} | BS: {args.batch_size} | LR: {args.learning_rate} | "
                 f"Image: {args.image_size} | Layers: {args.features_list}")
 
 
-def validate_training_setup(args, model, device, logger, token_insert_layer=0):
+def validate_training_setup(args, model, device, logger):
     """Validate training setup and requirements"""
     if isinstance(device, str):
         device = torch.device(device)
 
-    # Check GPU memory
     if device.type == 'cuda':
         dummy_input = torch.randn(args.batch_size, 3, args.image_size, args.image_size).to(device)
         with torch.no_grad():
-            _ = model.encode_image(dummy_input, args.features_list, token_insert_layer=token_insert_layer)
+            _ = model.encode_image(dummy_input, args.features_list)
         del dummy_input
         torch.cuda.empty_cache()
 
@@ -127,7 +126,7 @@ def validate_gradients(model, logger, epoch):
     return True
 
 
-def save_checkpoint(model, layer_transforms, args, epoch, checkpoint_path, token_insert_layer=0, cross_attn=None):
+def save_checkpoint(model, layer_transforms, args, epoch, checkpoint_path, cross_attn=None):
     """Save model checkpoint"""
     transform_state_dict = {name: t.state_dict() for name, t in layer_transforms.items()}
 
@@ -135,7 +134,6 @@ def save_checkpoint(model, layer_transforms, args, epoch, checkpoint_path, token
     checkpoint_data = {
         "anomaly_token": model.visual.anomaly_token.data.clone(),
         "normal_token": model.visual.normal_token.data.clone(),
-        "token_insert_layer": token_insert_layer,
         "ln_post_weight": ln_post.weight.data.clone() if ln_post else None,
         "ln_post_bias": ln_post.bias.data.clone() if ln_post else None,
         "features_list": args.features_list,
@@ -152,7 +150,6 @@ def save_checkpoint(model, layer_transforms, args, epoch, checkpoint_path, token
             "num_anchors": 4,
             "dropout": 0.1,
             "res_scale_init": 0.01,
-            "apply_to_layer24": True
         }
 
     torch.save(checkpoint_data, checkpoint_path)

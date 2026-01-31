@@ -70,7 +70,6 @@ run_clip_experiment() {
         --test_data_path ${test_path} \
         --checkpoint_path ${checkpoint_dir}/epoch_${epochs}.pth \
         --test_dataset ${test_dataset} \
-        --backbone "ViT-L/14@336px" \
         --save_path ${result_dir}/epoch_${epochs} \
         --device ${GPU}
 
