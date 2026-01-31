@@ -9,8 +9,7 @@ from utils.logger import get_logger
 from utils.training_utils import (
     print_training_parameters, validate_training_setup, setup_model_training,
     create_optimizer, setup_feature_transforms, check_for_nan,
-    compute_segmentation_maps, compute_segmentation_loss,
-    validate_gradients, save_checkpoint
+    compute_segmentation_loss, validate_gradients, save_checkpoint
 )
 from tqdm import tqdm
 import numpy as np
@@ -163,21 +162,7 @@ def train(args):
         raise ValueError(f"Unable to determine valid feature layers for backbone {args.backbone}.")
     args.features_list = resolved_layers
 
-    # Validate token_insert_layer (hardcoded to 0)
     token_insert_layer = 0
-    if token_insert_layer not in [0] + args.features_list:
-        if token_insert_layer > total_layers:
-            logger.warning(
-                f"token_insert_layer={token_insert_layer} exceeds backbone depth {total_layers}; "
-                f"using last feature layer {args.features_list[-1]} instead."
-            )
-            token_insert_layer = args.features_list[-1]
-        else:
-            logger.warning(
-                f"token_insert_layer={token_insert_layer} not in features_list={args.features_list}; "
-                f"defaulting to first feature layer {args.features_list[0]}."
-            )
-            token_insert_layer = args.features_list[0]
 
     preprocess, target_transform = get_transform(args)
 
@@ -185,63 +170,39 @@ def train(args):
 
     validate_training_setup(args, model, device, logger, token_insert_layer)
 
-    # Spatial-Aware Cross-Attention (enabled by default)
-    cross_attn = None
+    # Spatial-Aware Cross-Attention
     from utils.spatial_cross_attention import build_layer_adaptive_cross_attention
-
-    embed_dim = model.visual.embed_dim  # 1024 for ViT-L
-
     cross_attn = build_layer_adaptive_cross_attention(
         layers=args.features_list,
-        embed_dim=embed_dim,
+        embed_dim=model.visual.embed_dim,
         num_anchors=4,
         dropout=0.1,
         res_scale_init=0.01,
         apply_to_layer24=True
     ).to(device)
-
     cross_attn.train()
 
-    logger.info(f"✅ Spatial-Aware Cross-Attention enabled:")
-    logger.info(f"   - Layers: {args.features_list}")
-    logger.info(f"   - Total parameters: {cross_attn.get_num_parameters():,}")
-
     # Load dataset
-    try:
-        train_data = Dataset(root=args.train_data_path, transform=preprocess,
-                           target_transform=target_transform, dataset_name=args.train_dataset)
-        train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
-        logger.info(f"Dataset loaded: {len(train_data)} samples")
-    except Exception as e:
-        logger.error(f"Error loading dataset: {e}")
-        raise
+    train_data = Dataset(root=args.train_data_path, transform=preprocess,
+                       target_transform=target_transform, dataset_name=args.train_dataset)
+    train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
 
     # Setup feature transforms and model training
-    # 🔥 MODIFICATION: Use embed_dim (1024) instead of proj output (768)
-    feature_dim = model.visual.embed_dim  # 1024 for ViT-L, preserves full ViT information
-    layer_transforms = setup_feature_transforms(args.features_list, device, logger, feature_dim)
+    feature_dim = model.visual.embed_dim
+    layer_transforms = setup_feature_transforms(args.features_list, device, feature_dim)
 
-    # Setup model training (projection layer always frozen)
     setup_model_training(model)
 
-    optimizer = create_optimizer(model, layer_transforms, args, logger,
-                                cross_attn=cross_attn)
-
+    optimizer = create_optimizer(model, layer_transforms, args, cross_attn=cross_attn)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch, eta_min=args.learning_rate * 0.1)
-    # scheduler = None  # Use fixed LR for reproducibility across different epoch counts
 
-    device_obj = torch.device(args.device)
-    amp_enabled = bool(getattr(args, 'use_amp', False)) and device_obj.type == 'cuda'
+    amp_enabled = False
     scaler = GradScaler(enabled=amp_enabled)
 
     # Initialize losses
     loss_focal = FocalLoss()
     loss_dice = BinaryDiceLoss()
     loss_token_relation = ContrastiveLoss(temperature=0.1, margin=0.5)
-    logger.info("Using ContrastiveLoss (target: cos(θ) < -0.5)")
-
-    logger.info(f"Initial token norms - anomaly: {torch.norm(model.visual.anomaly_token).item():.6f}, "
-               f"normal: {torch.norm(model.visual.normal_token).item():.6f}")
     
     for epoch in tqdm(range(args.epoch)):
         # Keep model in train mode for gradient computation
@@ -266,26 +227,17 @@ def train(args):
                 patch_tokens = vision_output['patch_tokens']
                 patch_start_idx = vision_output['patch_start_idx']
 
-                # Spatial-Aware Cross-Attention enhancement (new design)
-                # Extract pure patch features (remove special tokens)
+                # Spatial-Aware Cross-Attention enhancement
                 patch_features_list = [pt[:, patch_start_idx:, :] for pt in patch_tokens]
 
-                # Layer adaptation
-                if cross_attn is not None:
-                    adapted_list = cross_attn(
-                        anomaly_features, normal_features,
-                        patch_features_list, args.features_list
-                    )
-                    # Extract adapted features
-                    anomaly_features_list = [adapted['anomaly'] for adapted in adapted_list]
-                    normal_features_list = [adapted['normal'] for adapted in adapted_list]
-                else:
-                    # Fallback to original approach (all layers use same token)
-                    anomaly_features_list = [anomaly_features] * len(patch_tokens)
-                    normal_features_list = [normal_features] * len(patch_tokens)
+                adapted_list = cross_attn(
+                    anomaly_features, normal_features,
+                    patch_features_list, args.features_list
+                )
+                anomaly_features_list = [adapted['anomaly'] for adapted in adapted_list]
+                normal_features_list = [adapted['normal'] for adapted in adapted_list]
 
                 # Contrastive Loss: Use enhanced features from last layer
-                # (Last layer has richest semantics, used for contrastive learning)
                 final_anomaly_features = anomaly_features_list[-1]
                 final_normal_features = normal_features_list[-1]
 
@@ -392,55 +344,31 @@ def train(args):
                check_for_nan(model.visual.normal_token, "normal_token after update", logger, epoch):
                 break
 
-            if seg_loss_value is not None:
-                loss_list.append(seg_loss_value)
-            if image_loss_value is not None:
-                image_loss_list.append(image_loss_value)
-            if token_relation_loss_value is not None:
-                token_relation_loss_list.append(token_relation_loss_value)
+            loss_list.append(seg_loss_value)
+            image_loss_list.append(image_loss_value)
+            token_relation_loss_list.append(token_relation_loss_value)
 
-
-        if scheduler is not None:
-            scheduler.step()
+        scheduler.step()
 
         # Log training progress
-        current_lr = scheduler.get_last_lr()[0] if scheduler is not None else args.learning_rate
         if (epoch + 1) % args.print_freq == 0:
-            logger.info(f'Epoch [{epoch+1}/{args.epoch}] - seg_loss: {np.mean(loss_list):.4f}, '
-                       f'image_loss: {np.mean(image_loss_list):.4f}, contrastive_loss: {np.mean(token_relation_loss_list):.4f}, '
-                       f'lr: {current_lr:.6f}')
-
-            # Log token norms and similarity
-            anomaly_norm = torch.norm(model.visual.anomaly_token).item()
-            normal_norm = torch.norm(model.visual.normal_token).item()
-
-            # Compute cosine similarity between tokens
-            with torch.no_grad():
-                anomaly_token_norm = F.normalize(model.visual.anomaly_token.squeeze(0), dim=-1)
-                normal_token_norm = F.normalize(model.visual.normal_token.squeeze(0), dim=-1)
-                token_similarity = F.cosine_similarity(anomaly_token_norm, normal_token_norm, dim=0).item()
-
-            logger.info(f"Token norms - anomaly: {anomaly_norm:.6f}, normal: {normal_norm:.6f}")
-            logger.info(f"Token similarity: {token_similarity:.4f} "
-                       f"({'✓ near -1 (opposite)' if token_similarity < -0.5 else '⚠ not converged'})")
-
+            logger.info(f'Epoch [{epoch+1}/{args.epoch}] - seg: {np.mean(loss_list):.4f}, '
+                       f'cls: {np.mean(image_loss_list):.4f}, contra: {np.mean(token_relation_loss_list):.4f}')
 
         # Save model checkpoint
         if (epoch + 1) % args.save_freq == 0:
             save_checkpoint(model, layer_transforms, args, epoch + 1,
-                          os.path.join(args.save_path, f'epoch_{epoch + 1}.pth'), logger,
+                          os.path.join(args.save_path, f'epoch_{epoch + 1}.pth'),
                           token_insert_layer=token_insert_layer,
                           cross_attn=cross_attn)
 
     # Save final model
     final_ckp_path = os.path.join(args.save_path, 'final_model.pth')
-    save_checkpoint(model, layer_transforms, args, args.epoch, final_ckp_path, logger,
+    save_checkpoint(model, layer_transforms, args, args.epoch, final_ckp_path,
                    token_insert_layer=token_insert_layer,
                    cross_attn=cross_attn)
-    
-    logger.info('🎉 Training completed!')
-    logger.info(f'Final model saved to {final_ckp_path}')
-    logger.info(f'To test: python test.py --checkpoint_path {final_ckp_path}')
+
+    logger.info(f'Training completed! Model saved to {final_ckp_path}')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("VisualAD Training V2", add_help=True)

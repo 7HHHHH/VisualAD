@@ -2,7 +2,7 @@
 set -e
 
 BATCH_SIZE=8
-GPU=cuda:0
+GPU=cuda:1
 
 MVTEC_PATH="/home/hyn/work/dataset/AD/mvtec"
 VISA_PATH="/home/hyn/work/dataset/AD/Visa"
