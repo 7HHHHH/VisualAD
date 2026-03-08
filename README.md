@@ -20,22 +20,6 @@ This is the official PyTorch implementation of:
 - **13 Benchmarks**: State-of-the-art performance across 6 industrial and 7 medical zero-shot anomaly detection benchmarks.
 - **Backbone Agnostic**: Adapts seamlessly to CLIP (ViT-L/14@336px) and DINOv2 (ViT-L/14).
 
-## Motivation
-
-<p align="center">
-  <img src="assets/motivation.png" width="85%">
-</p>
-
-Exploratory study motivating this work. (a) AnomalyCLIP derives normal/abnormal prototypes via trainable text prompts and a text encoder. (b) A purely visual variant removes the text branch and directly learns two visual prototypes, achieving comparable or slightly better results on VisA and MVTec with smoother evaluation curves, whereas AnomalyCLIP oscillates noticeably.
-
-## Framework
-
-<p align="center">
-  <img src="assets/framework.png" width="85%">
-</p>
-
-**Overview of VisualAD.** Two learnable global tokens (anomaly and normal) are inserted into a frozen ViT. For each intermediate layer, SCA uses anchor queries with positional encoding and token-guided gating to aggregate localized spatial evidence. In parallel, each layer's patch features are recalibrated by SAF. The cosine-similarity difference between enhanced tokens and recalibrated patches forms layer-wise anomaly maps, which are upsampled and summed to obtain the final anomaly map.
-
 ## Main Results
 
 ### Image-Level ZSAD Performance (AUROC / F1-max / AP)
@@ -59,14 +43,6 @@ Exploratory study motivating this work. (a) AnomalyCLIP derives normal/abnormal 
 | DTD-Synthetic | 79.5 / 16.1 / 9.8 / 51.5 | 94.9 / 60.4 / 61.0 / 33.8 | 97.5 / 55.8 / 52.5 / 87.9 | 95.1 / 58.4 / 56.1 / 34.3 | **98.1** / 64.3 / 65.5 / **94.8** | 96.7 / **65.8** / **67.7** / 92.4 |
 
 > All backbones use ViT-L/14@336px (CLIP) or ViT-L/14 (DINOv2). Full results including medical benchmarks (OCT17, BrainMRI, Brain_AD, HIS, CVC-ClinicDB, Endo, Kvasir) are available in our paper.
-
-## Qualitative Results
-
-<p align="center">
-  <img src="assets/visualization.png" width="90%">
-</p>
-
-Qualitative comparison of anomaly segmentation results across industrial and medical datasets. VisualAD produces more accurate segmentations with clearer boundaries and fewer false positives.
 
 ## Getting Started
 
