@@ -54,18 +54,32 @@ pip install -r requirements.txt
 
 Main dependencies: PyTorch >= 2.0, torchvision, timm, scikit-learn, scipy, tqdm.
 
-### 2. Data Preparation
+### 2. Datasets and Data Preparation
 
-We adopt the same dataset structure and JSON format as [AnomalyCLIP](https://github.com/zqhang/AnomalyCLIP). Please refer to their repository for dataset download and organization details.
+VisualAD is evaluated on 13 zero-shot anomaly detection benchmarks across industrial inspection and medical imaging. The dataset packages used by this project are available below:
 
-We also provide scripts to generate the required JSON metadata files:
+| Dataset | Domain | Description | Download |
+|:--|:--|:--|:--|
+| MVTec-AD | Industrial | Object and texture anomaly detection benchmark with image-level labels and pixel-level masks. | [Google Drive](https://drive.google.com/drive/folders/126ZyuMsgrmwJd_7hlNJQitv_liXfRzJt?usp=sharing) |
+| VisA | Industrial | Visual anomaly benchmark for industrial object inspection across multiple product categories. | [Google Drive](https://drive.google.com/drive/folders/1cgpyk8Gfpl_GVnA_l-K8tOV67mKOZdZj?usp=sharing) |
+| BTAD | Industrial | BTech industrial anomaly detection benchmark with three product categories. | [Google Drive](https://drive.google.com/drive/folders/1GW9kXgxJM0kC2TX3vWuydaiRkcdg7gjG?usp=sharing) |
+| KSDD2 | Industrial | Surface defect detection benchmark for production-line visual inspection. | [Google Drive](https://drive.google.com/drive/folders/1DUQM1DTQxBt4PCV6OWo8QgkP_kGMMxof?usp=sharing) |
+| DAGM | Industrial | Synthetic textured-surface defect benchmark with annotated defects. | [Google Drive](https://drive.google.com/drive/folders/1gkjep91EdTgDlEuEVfK-iKVr2mzJi81G?usp=sharing) |
+| DTD-Synthetic | Industrial | Synthetic anomaly localization benchmark built from texture images. | [Google Drive](https://drive.google.com/drive/folders/1VZIx-k5a6llIlTi2_lNTSJs3zzyelBlV?usp=sharing) |
+| OCT17 | Medical | Retinal OCT scans for retinal disease anomaly/classification evaluation. | [Google Drive](https://drive.google.com/drive/folders/1rhR9_7MmHEF48XIxfl-PulUsjboQEdM5?usp=sharing) |
+| BrainMRI | Medical | Brain MRI images for brain tumor or lesion anomaly classification. | [Google Drive](https://drive.google.com/drive/folders/12fYW2KBwjDqtDr-ji6iyGBIRkYzkILmk?usp=sharing) |
+| Brain_AD | Medical | Brain MRI benchmark for brain tumor or lesion anomaly classification. | [Google Drive](https://drive.google.com/drive/folders/1cEpuZIIANF06U1wbFf9ky7s_OpFsqukh?usp=sharing) |
+| HIS | Medical | Histopathology images for abnormal tissue analysis. | [Google Drive](https://drive.google.com/drive/folders/1pB9OVwk83_qgjvfza4z7CztcdEYX3pwE?usp=sharing) |
+| CVC-ClinicDB | Medical | Colonoscopy polyp segmentation benchmark with pixel-level annotations. | [Google Drive](https://drive.google.com/drive/folders/1VT_KELFmYRM7vyo3dk3yQycM2gMPJ-N9?usp=sharing) |
+| Endo | Medical | Endoscopic anomaly/lesion benchmark with segmentation annotations. | [Google Drive](https://drive.google.com/drive/folders/1DLfLmrnaXCayYAacIyxzm41x1wByv0x8?usp=sharing) |
+| Kvasir | Medical | Gastrointestinal endoscopy benchmark for polyp/anomaly segmentation. | [Google Drive](https://drive.google.com/drive/folders/1-JkKE9d3XuX0QrP8eSATawosUK41UuYA?usp=sharing) |
+
+We adopt the same dataset structure and JSON format as [AnomalyCLIP](https://github.com/zqhang/AnomalyCLIP). After downloading a dataset, place it under your local dataset directory and make sure `meta.json` exists in the dataset root. We also provide scripts to generate the required JSON metadata files:
 
 ```bash
 python generate_dataset_json/mvtec.py
 python generate_dataset_json/visa.py
 ```
-
-Supported datasets: MVTec-AD, VisA, BTAD, KSDD2, DAGM, DTD-Synthetic, OCT17, BrainMRI, Brain_AD, HIS, CVC-ClinicDB, Endo, Kvasir.
 
 ### 3. Pre-trained Weights
 
@@ -91,11 +105,13 @@ Please modify the dataset paths in `scripts/CLIP.sh` before running.
 If you find this work useful, please consider citing:
 
 ```bibtex
-@article{hou2026visualad,
-  title={VisualAD: Language-Free Zero-Shot Anomaly Detection via Vision Transformer},
-  author={Hou, Yanning and Li, Peiyuan and Liu, Zirui and Wang, Yitong and Ruan, Yanran and Qiu, Jianfeng and Xu, Ke},
-  journal={arXiv preprint arXiv:2603.07952},
-  year={2026}
+@InProceedings{Hou_2026_CVPR,
+  author    = {Hou, Yanning and Li, Peiyuan and Liu, Zirui and Wang, Yitong and Ruan, Yanran and Qiu, Jianfeng and Xu, Ke},
+  title     = {VisualAD: Language-Free Zero-Shot Anomaly Detection via Vision Transformer},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  month     = {June},
+  year      = {2026},
+  pages     = {21346-21356}
 }
 ```
 
