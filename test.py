@@ -54,6 +54,12 @@ def test(args):
     model.visual.anomaly_token.data = checkpoint["anomaly_token"].to(device)
     model.visual.normal_token.data = checkpoint["normal_token"].to(device)
 
+    # Restore the LayerNorm parameters optimized alongside the tokens.
+    model.visual.ln_post.load_state_dict({
+        "weight": checkpoint["ln_post_weight"],
+        "bias": checkpoint["ln_post_bias"],
+    })
+
     # Load feature transforms
     layer_transforms = nn.ModuleDict()
     if "layer_transforms" in checkpoint:
